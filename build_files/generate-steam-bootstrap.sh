@@ -10,8 +10,8 @@ STEAM_BOOTSTRAP_HOME="${STEAM_BOOTSTRAP_HOME:-/var/lib/armada/steam-bootstrap-ho
 STEAM="${STEAM_BOOTSTRAP_HOME}/.local/share/Steam"
 DOT_STEAM="${STEAM_BOOTSTRAP_HOME}/.steam"
 STEAM_ARM_RUNTIME_URL="https://repo.steampowered.com/steamrt3c/images/latest-public-beta/steam-runtime-steamrt-arm64.tar.xz"
-STEAM_ARM_CHANNEL="steamdeck_stable"
-STEAM_ARM_MANIFEST_URL="https://client-update.steamstatic.com/steam_client_steamdeck_stable_linuxarm64"
+STEAM_ARM_CHANNEL="publicbeta"
+STEAM_ARM_MANIFEST_URL="https://client-update.steamstatic.com/steam_client_publicbeta_linuxarm64"
 STEAM_ARM_CDN="https://client-update.steamstatic.com"
 STEAM_BOOTSTRAP_TIMEOUT="${STEAM_BOOTSTRAP_TIMEOUT:-900}"
 
@@ -27,7 +27,7 @@ ln -sfn ../.local/share/Steam/linuxarm64 "${DOT_STEAM}/sdkarm64"
 ln -sfn ../.local/share/Steam/ubuntu12_32 "${DOT_STEAM}/bin32"
 ln -sfn ../.local/share/Steam/ubuntu12_64 "${DOT_STEAM}/bin64"
 
-steam_manifest="${STEAM}/package/steam_client_steamdeck_stable_linuxarm64.manifest"
+steam_manifest="${STEAM}/package/steam_client_publicbeta_linuxarm64.manifest"
 curl -fsSL -o "${steam_manifest}" "${STEAM_ARM_MANIFEST_URL}"
 
 steam_seed_package=$(
