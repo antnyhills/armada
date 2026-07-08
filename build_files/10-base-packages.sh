@@ -40,6 +40,9 @@ dnf5 -y install --setopt=install_weak_deps=False \
     parted \
     gdisk \
     binutils \
+    blas \
+    bzip2-libs \
+    lapack \
     xz \
     dracut \
     dracut-config-generic \
@@ -50,6 +53,15 @@ dnf5 -y install --setopt=install_weak_deps=False \
     qt6-qtvirtualkeyboard \
     zenity \
     seatd
+
+# CachyOS Proton's ARM64 GStreamer asks for Arch's libbz2 soname.
+ln -sf libbz2.so.1 /usr/lib64/libbz2.so.1.0
+
+# Some AppImages link zlib's unversioned development soname.
+ln -sf libz.so.1 /usr/lib64/libz.so
+
+# pressure-vessel needs en_US.UTF-8; the base image ships only minimal-langpack (C.utf8).
+dnf5 -y install --setopt=install_weak_deps=False glibc-langpack-en
 
 dnf5 -y install --setopt=install_weak_deps=False \
     google-noto-sans-cjk-vf-fonts \
