@@ -1,6 +1,5 @@
-import { Field, PanelSection, PanelSectionRow, SliderField, ToggleField } from "@decky/ui";
+import { Field, SliderField, ToggleField } from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
-import { getHdrRuntimeState } from "../backend";
 import {
   getHdrEnabled,
   getHdrSdrContentBrightness,
@@ -17,9 +16,16 @@ import {
   hdrSdrBrightnessNormalizedToNits,
 } from "../lib/hdrBrightness";
 import { shouldShowHdrBrightnessControl } from "../lib/hdrVerification";
+import { hdrRuntimeState } from "../lib/hdrRuntimeState";
 
 const BRIGHTNESS_WRITE_THROTTLE_MS = 100;
 const BRIGHTNESS_READBACK_GRACE_MS = 750;
+
+function useHdrRuntimeSnapshot() {
+  const [snapshot, setSnapshot] = useState(hdrRuntimeState.getSnapshot);
+  useEffect(() => hdrRuntimeState.subscribe(setSnapshot), []);
+  return snapshot;
+}
 
 function useHdrToggleState() {
   const [enabled, setEnabled] = useState(getHdrEnabled);
@@ -28,68 +34,45 @@ function useHdrToggleState() {
   const [actionError, setActionError] = useState("");
   const [runtimeProblem, setRuntimeProblem] = useState("");
   const changingRef = useRef(false);
-  const operationGenerationRef = useRef(0);
+  const runtimeSnapshot = useHdrRuntimeSnapshot();
 
   useEffect(() => {
-    let cancelled = false;
-    let refreshInFlight = false;
-    const refresh = async () => {
-      if (refreshInFlight || changingRef.current) return;
-      refreshInFlight = true;
-      const operationGeneration = operationGenerationRef.current;
-      const nextAvailable = isHdrSettingAvailable();
-      const steamEnabled = getHdrEnabled();
-      try {
-        const runtime = await getHdrRuntimeState();
-        if (cancelled || operationGeneration !== operationGenerationRef.current) return;
-        setAvailable(nextAvailable);
-        if (changingRef.current) return;
+    if (!runtimeSnapshot.initialized || changingRef.current) return;
+    const nextAvailable = isHdrSettingAvailable();
+    const steamEnabled = getHdrEnabled();
+    setAvailable(nextAvailable);
 
-        const outputAgrees = runtime.available &&
-          runtime.supportsHdr &&
-          runtime.enabled === runtime.outputFeedback;
-        const fullyAgrees = outputAgrees && steamEnabled === runtime.enabled;
-        if (fullyAgrees) {
-          setEnabled(runtime.enabled);
-          setRuntimeProblem("");
-        } else if (!runtime.available) {
-          setEnabled(steamEnabled);
-          setRuntimeProblem(`Gamescope HDR readback unavailable: ${runtime.reason || "unknown"}`);
-        } else if (!runtime.supportsHdr) {
-          setEnabled(false);
-          setRuntimeProblem("Gamescope does not report HDR support for the active display.");
-        } else {
-          // The switch reflects confirmed output, never a Steam-only value.
-          setEnabled(runtime.enabled && runtime.outputFeedback);
-          setRuntimeProblem(
-            `HDR state mismatch: Steam=${Number(steamEnabled)}, ` +
-            `Gamescope=${Number(runtime.enabled)}, feedback=${Number(runtime.outputFeedback)}`,
-          );
-        }
-      } catch (error) {
-        if (
-          cancelled ||
-          changingRef.current ||
-          operationGeneration !== operationGenerationRef.current
-        ) return;
-        setAvailable(nextAvailable);
-        setEnabled(steamEnabled);
-        setRuntimeProblem(`Gamescope HDR readback failed: ${String(error)}`);
-      } finally {
-        refreshInFlight = false;
-      }
-    };
-    const timer = window.setInterval(() => void refresh(), 1000);
-    void refresh();
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
+    const runtime = runtimeSnapshot.runtime;
+    if (!runtime) {
+      setEnabled(steamEnabled);
+      setRuntimeProblem(`Gamescope HDR readback failed: ${runtimeSnapshot.error || "unknown"}`);
+      return;
+    }
+    const outputAgrees = runtime.available &&
+      runtime.supportsHdr &&
+      runtime.enabled === runtime.outputFeedback;
+    const fullyAgrees = outputAgrees && steamEnabled === runtime.enabled;
+    if (fullyAgrees) {
+      setEnabled(runtime.enabled);
+      setRuntimeProblem("");
+    } else if (!runtime.available) {
+      setEnabled(steamEnabled);
+      setRuntimeProblem(`Gamescope HDR readback unavailable: ${runtime.reason || "unknown"}`);
+    } else if (!runtime.supportsHdr) {
+      setEnabled(false);
+      setRuntimeProblem("Gamescope does not report HDR support for the active display.");
+    } else {
+      // The switch reflects confirmed output, never a Steam-only value.
+      setEnabled(runtime.enabled && runtime.outputFeedback);
+      setRuntimeProblem(
+        `HDR state mismatch: Steam=${Number(steamEnabled)}, ` +
+        `Gamescope=${Number(runtime.enabled)}, feedback=${Number(runtime.outputFeedback)}`,
+      );
+    }
+  }, [runtimeSnapshot]);
 
   const onChange = async (value: boolean) => {
     const previous = enabled;
-    operationGenerationRef.current += 1;
     changingRef.current = true;
     setChanging(true);
     setEnabled(value);
@@ -103,6 +86,7 @@ function useHdrToggleState() {
     } finally {
       changingRef.current = false;
       setChanging(false);
+      void hdrRuntimeState.refresh();
     }
   };
 
@@ -129,36 +113,12 @@ function useHdrBrightnessState() {
   const requestVersionRef = useRef(0);
   const inFlightRef = useRef(false);
   const mountedRef = useRef(true);
+  const runtimeSnapshot = useHdrRuntimeSnapshot();
 
   useEffect(() => {
     mountedRef.current = true;
-    let refreshInFlight = false;
-    const refresh = async () => {
-      if (refreshInFlight) return;
-      refreshInFlight = true;
-      const nextAvailable = isHdrSdrContentBrightnessAvailable();
-      setAvailable(nextAvailable);
-      if (nextAvailable && Date.now() >= readbackAfterRef.current) {
-        const nextBrightness = getHdrSdrContentBrightness();
-        if (nextBrightness !== undefined) setBrightness(nextBrightness);
-      }
-      try {
-        const steamEnabled = getHdrEnabled();
-        const runtime = await getHdrRuntimeState();
-        if (mountedRef.current) {
-          setHdrEnabled(shouldShowHdrBrightnessControl(steamEnabled, runtime));
-        }
-      } catch {
-        if (mountedRef.current) setHdrEnabled(false);
-      } finally {
-        refreshInFlight = false;
-      }
-    };
-    const timer = window.setInterval(() => void refresh(), 1000);
-    void refresh();
     return () => {
       mountedRef.current = false;
-      window.clearInterval(timer);
       if (timerRef.current !== undefined) {
         window.clearTimeout(timerRef.current);
         timerRef.current = undefined;
@@ -172,6 +132,20 @@ function useHdrBrightnessState() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!runtimeSnapshot.initialized || !mountedRef.current) return;
+    const nextAvailable = isHdrSdrContentBrightnessAvailable();
+    setAvailable(nextAvailable);
+    if (nextAvailable && Date.now() >= readbackAfterRef.current) {
+      const nextBrightness = getHdrSdrContentBrightness();
+      if (nextBrightness !== undefined) setBrightness(nextBrightness);
+    }
+    setHdrEnabled(shouldShowHdrBrightnessControl(
+      getHdrEnabled(),
+      runtimeSnapshot.runtime,
+    ));
+  }, [runtimeSnapshot]);
 
   const drainPendingWrites = async () => {
     timerRef.current = undefined;
@@ -194,6 +168,8 @@ function useHdrBrightnessState() {
           const currentBrightness = getHdrSdrContentBrightness();
           if (currentBrightness !== undefined) setBrightness(currentBrightness);
           setError(String(nextError));
+        } finally {
+          void hdrRuntimeState.refresh();
         }
       }
     } finally {
@@ -226,7 +202,6 @@ function useHdrBrightnessState() {
   return { available, brightness, error, hdrEnabled, onChange };
 }
 
-/** Shared by the native Display-page injection and Armada Control fallback. */
 export function HDRToggleControl() {
   const {
     actionError,
@@ -262,7 +237,6 @@ export function HDRToggleControl() {
   );
 }
 
-/** Shared by the native Display-page injection and Armada Control fallback. */
 export function HDRBrightnessControl() {
   const { available, brightness, error, hdrEnabled, onChange } = useHdrBrightnessState();
   if (!hdrEnabled) return null;
@@ -292,19 +266,5 @@ export function HDRBrightnessControl() {
       )}
       {error && <Field label="Could not change SDR-on-HDR brightness" description={error} />}
     </>
-  );
-}
-
-/** Armada Control fallback retained for builds where Valve's Display tree changes. */
-export function HDR() {
-  return (
-    <PanelSection title="HDR">
-      <PanelSectionRow>
-        <HDRToggleControl />
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <HDRBrightnessControl />
-      </PanelSectionRow>
-    </PanelSection>
   );
 }
