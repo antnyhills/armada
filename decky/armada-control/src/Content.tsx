@@ -34,6 +34,31 @@ export function Content() {
     load();
   }, [load]);
   useEffect(() => {
+    if (!config || config.hdrCapable) return;
+    let cancelled = false;
+    let attempts = 0;
+    const refreshCapability = async () => {
+      attempts += 1;
+      try {
+        const next = await getConfig();
+        if (!cancelled && next.hdrCapable) {
+          setConfig((current) => current ? { ...current, hdrCapable: true } : current);
+          return;
+        }
+      } catch {
+        // The header retains its current state while the backend reconnects.
+      }
+      if (!cancelled && attempts < 7) {
+        window.setTimeout(refreshCapability, Math.min(8000, 250 * (2 ** attempts)));
+      }
+    };
+    const timer = window.setTimeout(refreshCapability, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [config?.hdrCapable]);
+  useEffect(() => {
     if (!config || installedGamesRequested.current) return;
     installedGamesRequested.current = true;
     let cancelled = false;

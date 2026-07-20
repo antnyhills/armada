@@ -2,6 +2,7 @@ import { ButtonItem, Field, PanelSection } from "@decky/ui";
 import type { Dispatch, SetStateAction } from "react";
 import { setControllerType as applyControllerType, setSshEnabled as applySshEnabled } from "../backend";
 import { openCalibration } from "../components/Calibration";
+import { HDR } from "../components/HDR";
 import { SelectEdit, ToggleRow } from "../components/widgets";
 import type { Config } from "../types";
 
@@ -33,6 +34,7 @@ export function Settings({ config, setConfig }: {
   };
   return (
     <>
+      {config.hdrCapable && <HDR />}
       <PanelSection title="Controller">
         <SelectEdit
           label="Emulation"
