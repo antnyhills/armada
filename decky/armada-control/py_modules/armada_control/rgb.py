@@ -154,3 +154,34 @@ def apply_rgb_config(config):
                 right_brightness,
                 enabled,
             )
+
+import json
+
+CONFIG_PATH = Path("/etc/armada/rgb.json")
+
+DEFAULT_RGB_CONFIG = {
+    "enabled": True,
+    "sync": True,
+    "left": {"r": 255, "g": 255, "b": 255, "brightness": 255},
+    "right": {"r": 255, "g": 255, "b": 255, "brightness": 255},
+}
+
+def get_rgb_config():
+    if not CONFIG_PATH.exists():
+        return DEFAULT_RGB_CONFIG
+    try:
+        data = json.loads(CONFIG_PATH.read_text())
+        # Merge with defaults to guarantee all keys exist
+        merged = DEFAULT_RGB_CONFIG.copy()
+        merged.update(data)
+        return merged
+    except Exception:
+        return DEFAULT_RGB_CONFIG
+
+def save_rgb_config(config):
+    try:
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG_PATH.write_text(json.dumps(config, indent=2))
+        apply_rgb_config(config)
+    except Exception:
+        pass
