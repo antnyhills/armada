@@ -19,7 +19,9 @@ from armada_control.rgb import get_rgb_config, apply_rgb_config, save_rgb_config
 class Plugin:
     async def _main(self):
         try:
-            apply_rgb_config(get_rgb_config())
+            # Offload the RGB work to a background thread so it doesn't block Decky
+            config = await asyncio.to_thread(get_rgb_config)
+            await asyncio.to_thread(apply_rgb_config, config)
         except Exception:
             pass
 
