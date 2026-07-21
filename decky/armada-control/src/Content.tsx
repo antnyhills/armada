@@ -25,9 +25,9 @@ export function Content() {
       const next = await getConfig();
       next.game = currentGame();
       next.selectedGame = next.game || null;
-savedPowerSnapshot.current = JSON.stringify(next.power);
-savedTweaksSnapshot.current = JSON.stringify(next.tweaks);
-savedRgbSnapshot.current = JSON.stringify(next.rgb);
+savedPowerSnapshot.current = JSON.stringify(next.power || {});
+savedTweaksSnapshot.current = JSON.stringify(next.tweaks || {});
+savedRgbSnapshot.current = JSON.stringify(next.rgb || {});
 setConfig((current) => ({ ...next, installedGames: current?.installedGames || next.installedGames }));
     } catch (error) {
       setMessage(String(error));
