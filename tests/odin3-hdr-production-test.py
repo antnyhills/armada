@@ -25,6 +25,7 @@ POLICY_LUA = ROOT / "system_files/usr/share/gamescope/scripts/00-armada-session-
 PROFILE_LUA = ROOT / "system_files/usr/share/gamescope/scripts/10-armada/ayn.odin3.oled.lua"
 EDID_HEX = ROOT / "system_files/usr/share/armada/hdr/ayn-odin-3.edid.hex"
 INSTALL_STEAM = ROOT / "build_files/30-install-steam-session.sh"
+VALIDATE_GAMESCOPE = ROOT / "build_files/validate-gamescope-hdr-package.sh"
 VENDOR_FILES = ROOT / "build_files/40-vendor-system-files.sh"
 
 EDID_SHA256 = "a6ee4ff0c7f43723c093ea2575221a52668e7d610c13738274bf0cef61c96695"
@@ -154,8 +155,8 @@ class ProductionPolicyStaticTests(unittest.TestCase):
         self.assertNotIn("qualified_options+=(--hdr-enabled", wrapper)
         self.assertNotIn("qualified_options+=(--hdr-itm-enable", wrapper)
 
-        self.assertIn("--expose-client-sampleable-formats", installer)
-        self.assertIn("expose-client-sampleable-formats-v1", installer)
+        self.assertIn("validate-gamescope-hdr-package.sh", installer)
+        self.assertNotIn("/usr/bin/gamescope --help", installer)
 
     def test_lua_profile_requires_exact_device_connector_and_calibration(self) -> None:
         policy = POLICY_LUA.read_text(encoding="utf-8")
@@ -304,6 +305,106 @@ class ProductionFinalizerIntegrationTests(unittest.TestCase):
         result = self.run_finalizer()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
+
+
+@unittest.skipUnless(BASH, "requires GNU Bash")
+class GamescopePackageValidatorIntegrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.gamescope = self.root / "gamescope"
+        self.marker = self.root / "gamescope-hdr-capabilities"
+        self.rpm_query = self.root / "rpm"
+        self.execution_sentinel = self.root / "gamescope-was-executed"
+        self._write_gamescope(with_option=True)
+        self._write_rpm_query(provides_feature=True)
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def _write_gamescope(self, *, with_option: bool) -> None:
+        option = "--expose-client-sampleable-formats" if with_option else "--unrelated-option"
+        self.gamescope.write_text(
+            "#!/bin/bash\n"
+            f"touch {shlex.quote(bash_path(self.execution_sentinel))}\n"
+            f"# compiled payload: {option}\n",
+            encoding="utf-8",
+        )
+        self.gamescope.chmod(0o644)
+
+    def _write_rpm_query(self, *, provides_feature: bool) -> None:
+        exit_code = 0 if provides_feature else 1
+        self.rpm_query.write_text(
+            "#!/bin/bash\n"
+            "[[ \"$#\" == 3 ]] || exit 97\n"
+            "[[ \"$1\" == -q ]] || exit 98\n"
+            "[[ \"$2\" == --whatprovides ]] || exit 99\n"
+            "[[ \"$3\" == armada-gamescope-expose-client-sampleable-formats ]] || exit 96\n"
+            f"exit {exit_code}\n",
+            encoding="utf-8",
+        )
+        self.rpm_query.chmod(0o755)
+
+    def run_validator(self) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "ARMADA_GAMESCOPE_VALIDATOR_BINARY": bash_path(self.gamescope),
+                "ARMADA_GAMESCOPE_VALIDATOR_RPM": bash_path(self.rpm_query),
+                "ARMADA_GAMESCOPE_VALIDATOR_MARKER": bash_path(self.marker),
+            }
+        )
+        return subprocess.run(
+            [str(BASH), "--noprofile", "--norc", bash_path(VALIDATE_GAMESCOPE)],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=10,
+            env=environment,
+        )
+
+    def assert_validation_failed_without_marker(self, result: subprocess.CompletedProcess[str]) -> None:
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.marker.exists())
+        self.assertFalse(self.execution_sentinel.exists())
+
+    def write_stale_marker(self) -> None:
+        self.marker.write_text("stale-capability\n", encoding="utf-8")
+
+    def test_non_executable_gamescope_validates_without_execution(self) -> None:
+        self.assertFalse(bool(self.gamescope.stat().st_mode & 0o111))
+        result = self.run_validator()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.marker.read_text(encoding="utf-8"),
+            "expose-client-sampleable-formats-v1\n",
+        )
+        if os.name != "nt":
+            self.assertEqual(self.marker.stat().st_mode & 0o777, 0o644)
+        self.assertFalse(self.execution_sentinel.exists())
+
+    def test_missing_rpm_provide_fails_without_marker(self) -> None:
+        self._write_rpm_query(provides_feature=False)
+        self.write_stale_marker()
+        self.assert_validation_failed_without_marker(self.run_validator())
+
+    def test_missing_option_literal_fails_without_marker(self) -> None:
+        self._write_gamescope(with_option=False)
+        self.write_stale_marker()
+        self.assert_validation_failed_without_marker(self.run_validator())
+
+    def test_gamescope_symlink_is_refused_without_marker(self) -> None:
+        if os.name == "nt":
+            self.skipTest("Git-for-Windows does not preserve POSIX symlink tests")
+        target = self.root / "gamescope-target"
+        self.gamescope.replace(target)
+        try:
+            self.gamescope.symlink_to(target)
+        except OSError as error:
+            self.skipTest(f"symlinks unavailable: {error}")
+        self.write_stale_marker()
+        self.assert_validation_failed_without_marker(self.run_validator())
 
 
 if __name__ == "__main__":

@@ -21,17 +21,9 @@ dnf5 -y install --setopt=install_weak_deps=False \
 dnf5 -y install --setopt=install_weak_deps=False /packages/gamescope/gamescope-[0-9]*.aarch64.rpm
 
 # Odin 3 HDR requires the opt-in composited client-format policy from the
-# patched package.  Do not publish an image that would silently fall back to
-# the KMS-plane-only format set used by ordinary Gamescope sessions.
-if ! gamescope_help=$(/usr/bin/gamescope --help 2>&1) ||
-   ! grep -Fq -- '--expose-client-sampleable-formats' <<<"$gamescope_help"; then
-    echo 'ERROR: packaged Gamescope lacks --expose-client-sampleable-formats' >&2
-    exit 1
-fi
-unset gamescope_help
-printf '%s\n' expose-client-sampleable-formats-v1 \
-    >/usr/lib/armada/gamescope-hdr-capabilities
-chmod 0644 /usr/lib/armada/gamescope-hdr-capabilities
+# patched package. Validate package metadata and the installed payload without
+# executing a file-capability-bearing binary inside the rootless image build.
+/bin/bash --noprofile --norc /ctx/build_files/validate-gamescope-hdr-package.sh
 
 # Patched InputPlumber: dpad signed-axis fix
 dnf5 -y install --setopt=install_weak_deps=False /packages/inputplumber/inputplumber-*.rpm
