@@ -2,7 +2,12 @@ import { PanelSection, PanelSectionRow, SliderField, ToggleField } from "@decky/
 import type { Config, RgbZone } from "../types";
 
 export function Rgb({ config, setConfig }: { config: Config; setConfig: (cb: (current: Config | null) => Config | null) => void }) {
-  const rgb = config.rgb;
+const rgb = config.rgb || {
+  enabled: true,
+  sync: true,
+  left: { r: 255, g: 255, b: 255, brightness: 255 },
+  right: { r: 255, g: 255, b: 255, brightness: 255 }
+};
 
   const updateRgb = (updates: Partial<typeof rgb>) => {
     setConfig((current) => {
