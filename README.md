@@ -44,7 +44,7 @@ Includes:
 | AYANEO Pocket S2 | SM8650 | ✅ Tested |
 | AYANEO Pocket ACE | SM8550 | ✅ Tested |
 | AYANEO Pocket DS | SM8550 | ✅ Tested |
-| AYANEO Pocket DMG | SM8550 | ⚪ Untested |
+| AYANEO Pocket DMG | SM8550 | ✅ Tested |
 | AYANEO Pocket S 2K | SM8550 | ⚪ Untested |
 
 ## Flash to SD card
@@ -187,25 +187,30 @@ than it would be with real suspend.
 > Over-the-air updates are new and still being validated. You may need to reflash
 > if an update fails.
 
-Armada supports several release channels (only `Beta` is currently in use) and can 
-update itself in place, with no reflash and no need to redownload games. Trigger an 
-update from Steam's system settings. Updates are image-based with rollback, so a 
-failed boot falls back to the previous image.
+Armada can update itself in place, with no reflash and no need to redownload
+games. Choose an update channel and trigger the update from Steam's system
+settings:
+
+- **Beta** is recommended for normal use. It receives builds after they have
+  been through release testing.
+- **Preview** is the bleeding edge channel. It follows the latest commits on
+  `main` and may contain changes that are incomplete or have received little
+  on device testing.
 
 ## Known issues
 
 - **Black screen during Steam launch.** Sometimes there is a 30-60s black screen
   before Steam becomes fully visible, often following an update or restart.
+- **Compiling shaders message during gameplay.** This was a change made in a
+  recent version of CachyOS Proton 11 (ARM) that will be disabled in a future
+  Armada release.
 - **Red tint.** Some devices show a red tint on the panel after Steam
   restart. It is intermittent and a reboot clears it.
-- **FEX presets apply only to Proton launches.** Armada Control's per-game FEX
-  preset changes are applied through the bundled Proton wrapper, so they do not
-  currently affect native Linux x86 games launched directly through FEX.
 - **QAM is unmapped on Ayaneo devices.** Use Home+A to open the Quick Access Menu.
 
 ## Community
 
-Join the Discord: [discord.gg/WSA8HKdpX](https://discord.gg/WSA8HKdpX)
+Join the Discord: [discord.gg/HdmdSxTD5S](https://discord.gg/HdmdSxTD5S)
 
 ## Credits
 

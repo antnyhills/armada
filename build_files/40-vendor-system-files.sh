@@ -38,6 +38,8 @@ systemctl enable armada-steamos-manager.service
 systemctl --global enable armada-steamos-manager.service
 systemctl enable armada-bootimg-sync.service
 systemctl enable armada-flatpak-setup.service
+systemctl enable armada-waydroid-input.path
+systemctl disable waydroid-container.service
 
 # Updates are manual (Steam UI / steamos-update). The base image enables this
 # timer, which would auto-pull multi-GB images on metered tethering. Opt in with
@@ -50,6 +52,5 @@ systemctl mask bootloader-update.service
 # irqbalance re-spreads IRQs across all cores, overriding Armada's IRQ affinity policy.
 systemctl mask irqbalance.service
 
-# systemd-suspend.service is overridden (drop-in) to run fake-suspend; mask the
-# other sleep ops so nothing reaches real suspend (it hangs this SoC).
+# Only plain suspend is supported (via the suspend-dispatch drop-in); mask the rest.
 systemctl mask systemd-hibernate.service systemd-hybrid-sleep.service systemd-suspend-then-hibernate.service
