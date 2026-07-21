@@ -35,6 +35,56 @@ def discover_leds():
     if not leds_dir.exists():
         return {}
 
+    # multicolor check ...
+    left_multi = leds_dir / "multicolor:left"
+    right_multi = leds_dir / "multicolor:right"
+    if left_multi.exists() or right_multi.exists():
+        return {
+            "type": "multicolor",
+            "left": left_multi,
+            "right": right_multi
+        }
+
+    channels = {
+        "type": "individual",
+        "left": {"r": [], "g": [], "b": []},
+        "right": {"r": [], "g": [], "b": []}
+    }
+
+    # Wrap the loop in a try/except block in case reading /sys/class/leds fails
+    try:
+        for path in leds_dir.iterdir():
+            try:
+                name = path.name.lower()
+                if name.startswith(("mmc", "backlight", "input", "default")):
+                    continue
+
+                side = None
+                if name.startswith("l:") or "left" in name or name.startswith("l_"):
+                    side = "left"
+                elif name.startswith("r:") or "right" in name or name.startswith("r_"):
+                    side = "right"
+
+                if not side:
+                    continue
+
+                color = None
+                if ":r" in name or "_r" in name or "red" in name:
+                    color = "r"
+                elif ":g" in name or "_g" in name or "green" in name:
+                    color = "g"
+                elif ":b" in name or "_b" in name or "blue" in name:
+                    color = "b"
+
+                if color:
+                    channels[side][color].append(path / "brightness")
+            except Exception:
+                continue
+    except Exception:
+        return {}
+
+    return channels
+
     # Check for multicolor nodes first (Odin 2 format)
     left_multi = leds_dir / "multicolor:left"
     right_multi = leds_dir / "multicolor:right"
