@@ -65,11 +65,12 @@ BASH = find_bash()
 
 def bash_path(path: Path) -> str:
     """Return a path understood by GNU Bash on POSIX and Git-for-Windows."""
-    resolved = path.resolve()
+    # Keep the final path component intact so symlink-rejection tests remain valid.
+    absolute = path.absolute()
     if os.name != "nt":
-        return str(resolved)
-    drive = resolved.drive.rstrip(":").lower()
-    tail = resolved.as_posix().split(":", 1)[1].lstrip("/")
+        return str(absolute)
+    drive = absolute.drive.rstrip(":").lower()
+    tail = absolute.as_posix().split(":", 1)[1].lstrip("/")
     return f"/{drive}/{tail}"
 
 
