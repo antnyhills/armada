@@ -232,6 +232,7 @@ export class AutoHdrPreferenceCoordinator {
     const current = this.resolveScope();
     const currentKey = scopeKey(current);
     if (currentKey !== requestedKey) {
+      if (!this.running) return this.snapshot;
       this.observedScopeKey = currentKey;
       const activation = this.activationState();
       if (activation === "ready") void this.reconcile();

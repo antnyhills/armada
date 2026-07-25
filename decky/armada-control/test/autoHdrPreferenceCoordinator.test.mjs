@@ -131,6 +131,33 @@ test("stale AppID response is discarded and reconciled to the new running game",
   coordinator.stop();
 });
 
+test("stopping prevents a stale response from scheduling another request", async () => {
+  let activeScope = { scope: "game", appId: "10" };
+  let resolveFirst;
+  const calls = [];
+  const coordinator = new AutoHdrPreferenceCoordinator({
+    resolveScope: () => activeScope,
+    read: async (scope, appId) => snapshot({ scope, appId }),
+    reconcile: (scope, appId) => {
+      calls.push(appId);
+      return new Promise((resolve) => { resolveFirst = resolve; });
+    },
+    update: async () => snapshot(),
+    schedule: () => 1,
+    cancel: () => {},
+  });
+
+  coordinator.start();
+  await flush();
+  activeScope = { scope: "game", appId: "20" };
+  coordinator.stop();
+  resolveFirst(snapshot({ scope: "game", appId: "10", runtimeEnabled: true }));
+  await flush();
+  await flush();
+
+  assert.deepEqual(calls, ["10"]);
+});
+
 test("HDR off then ready restores saved AutoHDR once without retries", async () => {
   let activation = "off";
   const calls = [];
