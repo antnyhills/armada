@@ -26,7 +26,8 @@ HDR capability is not enabled by the device profile alone. At session startup,
 panel policy, EDID policy digest, and required immutable image artifacts.
 Failure leaves `ARMADA_HDR_CAPABLE=0` and preserves the normal SDR session.
 
-The AutoHDR controls require all of the following:
+AutoHDR can report effective conversion only when all of the following are
+true:
 
 1. A qualified HDR output.
 2. Verified active HDR output from Gamescope.
