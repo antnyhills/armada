@@ -21,6 +21,6 @@ fi
 # Do not execute Gamescope while constructing the image. Nested rootless image
 # builds can prohibit execution even when the installed AArch64 binary is valid.
 # The production wrapper performs the runtime --help probe on the target device,
-# and the Release 10 builder later verifies this exact binary by SHA-256.
+# and release validation can verify this exact binary by SHA-256.
 LC_ALL=C grep -aFq -- "$required_option" "$gamescope_binary" ||
     fail "packaged Gamescope lacks $required_option"
