@@ -32,10 +32,20 @@ function runtimeStatesEqual(
   return (
     left.available === right.available &&
     left.display === right.display &&
+    left.displayIsExternal === right.displayIsExternal &&
     left.supportsHdr === right.supportsHdr &&
     left.enabled === right.enabled &&
     left.outputFeedback === right.outputFeedback &&
     left.sdrContentBrightnessNits === right.sdrContentBrightnessNits &&
+    left.autoHdrSupported === right.autoHdrSupported &&
+    left.autoHdrEnabled === right.autoHdrEnabled &&
+    left.autoHdrSdrNits === right.autoHdrSdrNits &&
+    left.autoHdrTargetNits === right.autoHdrTargetNits &&
+    left.autoHdrSupportedModes === right.autoHdrSupportedModes &&
+    left.autoHdrModeProtocolPresent === right.autoHdrModeProtocolPresent &&
+    left.autoHdrModeProtocol === right.autoHdrModeProtocol &&
+    left.autoHdrMode === right.autoHdrMode &&
+    left.autoHdrEffectiveMode === right.autoHdrEffectiveMode &&
     left.reason === right.reason
   );
 }
@@ -60,6 +70,7 @@ export class HdrRuntimeStateCoordinator {
   private readonly cancel: (handle: TimerHandle) => void;
   private readonly listeners = new Set<HdrRuntimeListener>();
   private snapshot: HdrRuntimeSnapshot = INITIAL_SNAPSHOT;
+  private stateVersion = 0;
   private generation = 0;
   private timer: TimerHandle | undefined;
   private inFlight: { generation: number; promise: Promise<HdrRuntimeSnapshot> } | undefined;
@@ -73,6 +84,17 @@ export class HdrRuntimeStateCoordinator {
   }
 
   getSnapshot = (): HdrRuntimeSnapshot => this.snapshot;
+
+  publish = (runtime: HdrRuntimeState): HdrRuntimeSnapshot => {
+    if (this.listeners.size === 0) return this.snapshot;
+    const next: HdrRuntimeSnapshot = { initialized: true, runtime, error: "" };
+    if (!snapshotsEqual(this.snapshot, next)) {
+      this.stateVersion += 1;
+      this.snapshot = next;
+      for (const listener of this.listeners) listener(this.snapshot);
+    }
+    return this.snapshot;
+  };
 
   subscribe = (listener: HdrRuntimeListener): (() => void) => {
     // Give every subscription its own identity so even repeated registration
@@ -105,6 +127,7 @@ export class HdrRuntimeStateCoordinator {
     if (this.listeners.size === 0) return Promise.resolve(this.snapshot);
 
     const generation = this.generation;
+    const stateVersion = this.stateVersion;
     if (this.inFlight?.generation === generation) return this.inFlight.promise;
 
     const promise = this.read()
@@ -115,10 +138,15 @@ export class HdrRuntimeStateCoordinator {
         error: String(error),
       }))
       .then((next) => {
-        if (generation !== this.generation || this.listeners.size === 0) {
+        if (
+          generation !== this.generation ||
+          stateVersion !== this.stateVersion ||
+          this.listeners.size === 0
+        ) {
           return this.snapshot;
         }
         if (!snapshotsEqual(this.snapshot, next)) {
+          this.stateVersion += 1;
           this.snapshot = next;
           for (const listener of this.listeners) listener(this.snapshot);
         }

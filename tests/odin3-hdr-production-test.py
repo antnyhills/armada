@@ -25,6 +25,7 @@ POLICY_LUA = ROOT / "system_files/usr/share/gamescope/scripts/00-armada-session-
 PROFILE_LUA = ROOT / "system_files/usr/share/gamescope/scripts/10-armada/ayn.odin3.oled.lua"
 EDID_HEX = ROOT / "system_files/usr/share/armada/hdr/ayn-odin-3.edid.hex"
 INSTALL_STEAM = ROOT / "build_files/30-install-steam-session.sh"
+VERIFY_GAMESCOPE = ROOT / "build_files/verify-gamescope-capability.sh"
 VENDOR_FILES = ROOT / "build_files/40-vendor-system-files.sh"
 
 EDID_SHA256 = "a6ee4ff0c7f43723c093ea2575221a52668e7d610c13738274bf0cef61c96695"
@@ -150,12 +151,26 @@ class ProductionPolicyStaticTests(unittest.TestCase):
         self.assertIn('emit_export gamescope_hdr_enabled false', finalizer)
         self.assertNotIn('emit_export ENABLE_GAMESCOPE_HDR', finalizer)
         self.assertIn("qualified_options+=(--hdr-itm-target-nits 650)", wrapper)
+        self.assertIn("qualified_options+=(--hdr-itm-content-nits 550)", wrapper)
         self.assertIn("qualified_options+=(--expose-client-sampleable-formats)", wrapper)
         self.assertNotIn("qualified_options+=(--hdr-enabled", wrapper)
         self.assertNotIn("qualified_options+=(--hdr-itm-enable", wrapper)
+        self.assertNotIn("--hdr-itm-mode", wrapper)
+        self.assertNotIn("GAMESCOPE_HDR_ITM_MODE", finalizer)
 
-        self.assertIn("--expose-client-sampleable-formats", installer)
         self.assertIn("expose-client-sampleable-formats-v1", installer)
+        self.assertIn(
+            "/bin/bash /ctx/build_files/verify-gamescope-capability.sh /usr/bin/gamescope",
+            installer,
+        )
+        self.assertNotIn("/usr/bin/gamescope --help", installer)
+
+        capability_gate = VERIFY_GAMESCOPE.read_text(encoding="utf-8")
+        self.assertIn("--expose-client-sampleable-formats", capability_gate)
+        self.assertIn("rpm -qf --queryformat", capability_gate)
+        self.assertIn('[[ "$package_owner" == gamescope ]]', capability_gate)
+        self.assertIn("grep -aFq", capability_gate)
+        self.assertNotIn("gamescope --help", capability_gate)
 
     def test_lua_profile_requires_exact_device_connector_and_calibration(self) -> None:
         policy = POLICY_LUA.read_text(encoding="utf-8")
@@ -304,6 +319,205 @@ class ProductionFinalizerIntegrationTests(unittest.TestCase):
         result = self.run_finalizer()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
+
+
+@unittest.skipUnless(BASH, "requires GNU Bash")
+class ProductionWrapperIntegrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.runtime = self.root / "runtime"
+        self.runtime.mkdir(mode=0o700)
+        self.capture = self.root / "arguments"
+        self.marker = self._file(
+            "capabilities", "expose-client-sampleable-formats-v1\n"
+        )
+        self.edid = self.root / "edid.bin"
+        self.edid.write_bytes(bytes.fromhex(EDID_HEX.read_text(encoding="ascii")))
+        self.gamescope = self._file(
+            "gamescope",
+            """#!/bin/bash
+if [[ "${1:-}" == --help ]]; then
+    printf '%s\n' '  --expose-client-sampleable-formats'
+    if [[ "${MOCK_CONTENT_CAPABILITY:-1}" == 1 ]]; then
+        printf '%s\n' '  --hdr-itm-content-nits'
+    fi
+    exit 0
+fi
+printf '%s\n' "$@" >"$MOCK_ARGUMENT_CAPTURE"
+""",
+            executable=True,
+        )
+        self.wrapper = self.root / "gamescope-odin3-hdr"
+        self._write_wrapper()
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def _file(self, name: str, contents: str, *, executable: bool = False) -> Path:
+        path = self.root / name
+        path.write_text(contents, encoding="utf-8")
+        path.chmod(0o755 if executable else 0o644)
+        return path
+
+    def _write_wrapper(self) -> None:
+        text = WRAPPER.read_text(encoding="utf-8")
+        replacements = {
+            "gamescope": self.gamescope,
+            "capability_marker": self.marker,
+            "expected_seed": self.edid,
+        }
+        for name, value in replacements.items():
+            replacement = f"readonly {name}={shlex.quote(bash_path(value))}"
+            text, count = re.subn(
+                rf"^readonly {name}=.*$",
+                lambda _match: replacement,
+                text,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            self.assertEqual(count, 1, name)
+
+        original_runtime_check = """if [[ ! "$runtime_dir" =~ ^/run/user/[0-9]+$ || ! -d "$runtime_dir" ||
+      -L "$runtime_dir" || ! -O "$runtime_dir" ]]; then"""
+        test_runtime_check = f"""if [[ "$runtime_dir" != {shlex.quote(bash_path(self.runtime))} || ! -d "$runtime_dir" ||
+      -L "$runtime_dir" ]]; then"""
+        self.assertIn(original_runtime_check, text)
+        text = text.replace(original_runtime_check, test_runtime_check, 1)
+        text = text.replace(
+            '/usr/bin/install -d -m 0700 -- "$edid_dir"',
+            '/usr/bin/mkdir -p -- "$edid_dir"',
+            1,
+        )
+        text = text.replace(
+            '/usr/bin/install -m 0600 -- "$expected_seed" "$staged_edid"',
+            '/usr/bin/cp -- "$expected_seed" "$staged_edid"',
+            1,
+        )
+        self.wrapper.write_text(text, encoding="utf-8")
+        self.wrapper.chmod(0o755)
+
+    def run_wrapper(
+        self, *arguments: str, content_capability: bool = True
+    ) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "ARMADA_HDR_CAPABLE": "1",
+                "ARMADA_DEVICE_ID": "ayn-odin-3",
+                "ARMADA_PRIMARY_CONNECTOR": "DSI-1",
+                "GAMESCOPE_ARMADA_FIXED_PANEL_POLICY": "ayn-odin-3:DSI-1",
+                "GAMESCOPE_ARMADA_HDR_PRODUCTION_MODE": "immutable-image",
+                "GAMESCOPE_ARMADA_HDR_VALIDATED": "1",
+                "GAMESCOPE_INTERNAL_DISPLAY_ID": "ayn-odin-3",
+                "GAMESCOPE_SCRIPT_PATH": "/usr/share/gamescope/scripts",
+                "GAMESCOPE_PATCHED_EDID_SEED": bash_path(self.edid),
+                "GAMESCOPE_HDR_ITM_TARGET_NITS": "650",
+                "GAMESCOPE_ARMADA_HDR_MAX_CLL": "650",
+                "GAMESCOPE_ARMADA_HDR_MAX_FALL": "650",
+                "GAMESCOPE_ARMADA_HDR_OUTPUT_EOTF": "gamma22",
+                "ENABLE_GAMESCOPE_WSI": "1",
+                "ENABLE_HDR_WSI": "1",
+                "DXVK_HDR": "1",
+                "XDG_RUNTIME_DIR": bash_path(self.runtime),
+                "GAMESCOPE_PATCHED_EDID_FILE": bash_path(
+                    self.runtime / "armada-hdr/odin3-edid.bin"
+                ),
+                "MOCK_ARGUMENT_CAPTURE": bash_path(self.capture),
+                "MOCK_CONTENT_CAPABILITY": "1" if content_capability else "0",
+            }
+        )
+        return subprocess.run(
+            [
+                str(BASH),
+                "--noprofile",
+                "--norc",
+                "-p",
+                bash_path(self.wrapper),
+                *arguments,
+            ],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+            timeout=10,
+        )
+
+    def captured_arguments(self) -> list[str]:
+        return self.capture.read_text(encoding="utf-8").splitlines()
+
+    def test_missing_capability_fails_closed(self) -> None:
+        result = self.run_wrapper("--steam", content_capability=False)
+        self.assertEqual(result.returncode, 69)
+        self.assertIn("lacks required HDR composition support", result.stderr)
+        self.assertFalse(self.capture.exists())
+
+    def test_absent_content_ceiling_is_injected_without_enabling_hdr(self) -> None:
+        result = self.run_wrapper("--steam")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        arguments = self.captured_arguments()
+        self.assertEqual(arguments.count("--hdr-itm-target-nits"), 1)
+        self.assertIn("650", arguments)
+        self.assertEqual(arguments.count("--hdr-itm-content-nits"), 1)
+        self.assertIn("550", arguments)
+        self.assertEqual(arguments.count("--expose-client-sampleable-formats"), 1)
+        self.assertNotIn("--hdr-enabled", arguments)
+        self.assertNotIn("--hdr-itm-enable", arguments)
+
+    def test_explicit_content_ceiling_forms_are_accepted(self) -> None:
+        for explicit in (
+            ("--hdr-itm-content-nits", "550"),
+            ("--hdr-itm-content-nits=550",),
+        ):
+            with self.subTest(explicit=explicit):
+                self.capture.unlink(missing_ok=True)
+                result = self.run_wrapper("--steam", *explicit)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                arguments = self.captured_arguments()
+                self.assertEqual(
+                    sum(
+                        argument == "--hdr-itm-content-nits"
+                        or argument.startswith("--hdr-itm-content-nits=")
+                        for argument in arguments
+                    ),
+                    1,
+                )
+
+    def test_missing_duplicate_and_non_550_content_values_are_rejected(self) -> None:
+        cases = (
+            (("--steam", "--hdr-itm-content-nits"), "missing value"),
+            (("--steam", "--hdr-itm-content-nits="), "missing value"),
+            (
+                (
+                    "--steam",
+                    "--hdr-itm-content-nits",
+                    "550",
+                    "--hdr-itm-content-nits=550",
+                ),
+                "duplicate",
+            ),
+            (("--steam", "--hdr-itm-content-nits", "500"), "expected 550"),
+        )
+        for arguments, message in cases:
+            with self.subTest(arguments=arguments):
+                self.capture.unlink(missing_ok=True)
+                result = self.run_wrapper(*arguments)
+                self.assertEqual(result.returncode, 64)
+                self.assertIn(message, result.stderr)
+                self.assertFalse(self.capture.exists())
+
+    def test_force_enable_options_remain_rejected(self) -> None:
+        for option in (
+            "--hdr-enabled",
+            "--hdr-enable",
+            "--hdr-itm-enabled",
+            "--hdr-itm-enable",
+        ):
+            with self.subTest(option=option):
+                result = self.run_wrapper("--steam", option)
+                self.assertEqual(result.returncode, 64)
+                self.assertIn("Steam owns HDR state", result.stderr)
 
 
 if __name__ == "__main__":

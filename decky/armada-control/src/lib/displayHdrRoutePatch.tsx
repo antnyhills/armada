@@ -3,7 +3,11 @@ import type { RoutePatch } from "@decky/api";
 import { afterPatch, createReactTreePatcher } from "@decky/ui";
 import { Component, createElement, useEffect, useRef, useState } from "react";
 import type { ErrorInfo, ReactNode } from "react";
-import { HDRBrightnessControl, HDRToggleControl } from "../components/HDR";
+import {
+  AutoHDRToggleControl,
+  HDRBrightnessControl,
+  HDRToggleControl,
+} from "../components/HDR";
 import {
   ARMADA_HDR_INJECTION_MARKER,
   DISPLAY_SETTINGS_ROUTE,
@@ -57,6 +61,7 @@ function SafeNativeHdrToggle(_: InjectionMarkerProps) {
   return (
     <HdrControlErrorBoundary>
       <HDRToggleControl />
+      <AutoHDRToggleControl />
     </HdrControlErrorBoundary>
   );
 }

@@ -9,10 +9,20 @@ function runtime(overrides = {}) {
   return {
     available: true,
     display: ":0",
+    displayIsExternal: false,
     supportsHdr: true,
     enabled: false,
     outputFeedback: false,
     sdrContentBrightnessNits: null,
+    autoHdrSupported: false,
+    autoHdrEnabled: false,
+    autoHdrSdrNits: null,
+    autoHdrTargetNits: null,
+    autoHdrSupportedModes: 0,
+    autoHdrModeProtocolPresent: false,
+    autoHdrModeProtocol: false,
+    autoHdrMode: null,
+    autoHdrEffectiveMode: null,
     reason: "ok",
     ...overrides,
   };
@@ -115,6 +125,67 @@ test("manual refreshes deduplicate in flight and notify only for a changed snaps
   await changedRefresh;
   assert.equal(updates.length, 2);
   assert.equal(updates[1].runtime.enabled, true);
+  unsubscribe();
+});
+
+test("adaptive requested and effective mode changes publish distinct snapshots", async () => {
+  const reads = [deferred(), deferred(), deferred()];
+  let readIndex = 0;
+  const { state } = coordinator(() => reads[readIndex++].promise);
+  const updates = [];
+  const unsubscribe = state.subscribe((snapshot) => updates.push(snapshot));
+  const base = runtime({
+    autoHdrSupported: true,
+    autoHdrEnabled: true,
+    autoHdrSupportedModes: 3,
+    autoHdrModeProtocol: true,
+    autoHdrMode: 2,
+    autoHdrEffectiveMode: 1,
+  });
+  reads[0].resolve(base);
+  await settle();
+
+  const effectiveRefresh = state.refresh();
+  reads[1].resolve({ ...base, autoHdrEffectiveMode: 2 });
+  await effectiveRefresh;
+  const requestRefresh = state.refresh();
+  reads[2].resolve({ ...base, autoHdrMode: 1, autoHdrEffectiveMode: 1 });
+  await requestRefresh;
+
+  assert.equal(updates.length, 3);
+  assert.equal(updates[1].runtime.autoHdrEffectiveMode, 2);
+  assert.equal(updates[2].runtime.autoHdrMode, 1);
+  unsubscribe();
+});
+
+test("verified mutation readback publishes immediately to active subscribers", async () => {
+  const { state } = coordinator(async () => runtime());
+  const updates = [];
+  const unsubscribe = state.subscribe((snapshot) => updates.push(snapshot));
+  await settle();
+  const applied = runtime({
+    enabled: true,
+    outputFeedback: true,
+    autoHdrSupported: true,
+    autoHdrEnabled: true,
+    autoHdrSdrNits: 203,
+    autoHdrTargetNits: 650,
+  });
+  state.publish(applied);
+  assert.equal(state.getSnapshot().runtime, applied);
+  assert.equal(updates.at(-1).runtime, applied);
+  unsubscribe();
+});
+
+test("an older polling read cannot overwrite verified mutation readback", async () => {
+  const firstRead = deferred();
+  const { state } = coordinator(() => firstRead.promise);
+  const unsubscribe = state.subscribe(() => {});
+  const applied = runtime({ autoHdrSupported: true, autoHdrEnabled: true });
+  state.publish(applied);
+  firstRead.resolve(runtime({ autoHdrSupported: true, autoHdrEnabled: false }));
+  await settle();
+  assert.equal(state.getSnapshot().runtime, applied);
   unsubscribe();
 });
 

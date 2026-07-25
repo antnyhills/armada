@@ -55,8 +55,9 @@ if [[ ! -f "$capability_marker" || -L "$capability_marker" ||
 fi
 
 if ! gamescope_help=$("$gamescope" --help 2>&1) ||
-   ! /usr/bin/grep -Fq -- '--expose-client-sampleable-formats' <<<"$gamescope_help"; then
-    printf 'Armada HDR: installed Gamescope lacks composited client-format support\n' >&2
+   ! /usr/bin/grep -Fq -- '--expose-client-sampleable-formats' <<<"$gamescope_help" ||
+   ! /usr/bin/grep -Fq -- '--hdr-itm-content-nits' <<<"$gamescope_help"; then
+    printf 'Armada HDR: installed Gamescope lacks required HDR composition support\n' >&2
     exit 69
 fi
 unset gamescope_help
@@ -96,6 +97,8 @@ trap - EXIT HUP INT TERM
 
 target_count=0
 target_value=
+content_count=0
+content_value=
 client_format_count=0
 arguments=("$@")
 for (( index = 0; index < ${#arguments[@]}; index++ )); do
@@ -112,10 +115,27 @@ for (( index = 0; index < ${#arguments[@]}; index++ )); do
             target_count=$((target_count + 1))
             target_value=${arguments[index]#*=}
             ;;
+        --hdr-itm-content-nits)
+            if (( index + 1 >= ${#arguments[@]} )) ||
+               [[ "${arguments[index + 1]}" == --* ]]; then
+                printf 'Armada HDR: missing value after --hdr-itm-content-nits\n' >&2
+                exit 64
+            fi
+            content_count=$((content_count + 1))
+            content_value=${arguments[index + 1]}
+            ;;
+        --hdr-itm-content-nits=*)
+            content_count=$((content_count + 1))
+            content_value=${arguments[index]#*=}
+            if [[ -z "$content_value" ]]; then
+                printf 'Armada HDR: missing value after --hdr-itm-content-nits\n' >&2
+                exit 64
+            fi
+            ;;
         --expose-client-sampleable-formats)
             client_format_count=$((client_format_count + 1))
             ;;
-        --hdr-enabled|--hdr-itm-enable)
+        --hdr-enabled|--hdr-enable|--hdr-itm-enabled|--hdr-itm-enable)
             printf 'Armada HDR: Steam owns HDR state; refusing force-enable option %s\n' \
                 "${arguments[index]}" >&2
             exit 64
@@ -123,7 +143,7 @@ for (( index = 0; index < ${#arguments[@]}; index++ )); do
     esac
 done
 
-if (( target_count > 1 || client_format_count > 1 )); then
+if (( target_count > 1 || content_count > 1 || client_format_count > 1 )); then
     printf 'Armada HDR: refusing duplicate qualified Gamescope options\n' >&2
     exit 64
 fi
@@ -131,10 +151,18 @@ if (( target_count == 1 )) && [[ "$target_value" != 650 ]]; then
     printf 'Armada HDR: refusing ITM target %q (expected 650)\n' "$target_value" >&2
     exit 64
 fi
+if (( content_count == 1 )) && [[ "$content_value" != 550 ]]; then
+    printf 'Armada HDR: refusing ITM content ceiling %q (expected 550)\n' \
+        "$content_value" >&2
+    exit 64
+fi
 
 qualified_options=()
 if (( target_count == 0 )); then
     qualified_options+=(--hdr-itm-target-nits 650)
+fi
+if (( content_count == 0 )); then
+    qualified_options+=(--hdr-itm-content-nits 550)
 fi
 if (( client_format_count == 0 )); then
     qualified_options+=(--expose-client-sampleable-formats)

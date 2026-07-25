@@ -21,14 +21,13 @@ dnf5 -y install --setopt=install_weak_deps=False \
 dnf5 -y install --setopt=install_weak_deps=False /packages/gamescope/gamescope-[0-9]*.aarch64.rpm
 
 # Odin 3 HDR requires the opt-in composited client-format policy from the
-# patched package.  Do not publish an image that would silently fall back to
+# patched package. Do not publish an image that would silently fall back to
 # the KMS-plane-only format set used by ordinary Gamescope sessions.
-if ! gamescope_help=$(/usr/bin/gamescope --help 2>&1) ||
-   ! grep -Fq -- '--expose-client-sampleable-formats' <<<"$gamescope_help"; then
-    echo 'ERROR: packaged Gamescope lacks --expose-client-sampleable-formats' >&2
-    exit 1
-fi
-unset gamescope_help
+#
+# This build runs inside a nested rootless image environment where executing
+# Gamescope can be prohibited even though the installed AArch64 binary is
+# valid. Validate the installed package and option marker without launching it.
+/bin/bash /ctx/build_files/verify-gamescope-capability.sh /usr/bin/gamescope
 printf '%s\n' expose-client-sampleable-formats-v1 \
     >/usr/lib/armada/gamescope-hdr-capabilities
 chmod 0644 /usr/lib/armada/gamescope-hdr-capabilities

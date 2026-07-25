@@ -1,7 +1,16 @@
 import { definePlugin } from "@decky/api";
-import { getCompatApplied, getConfig, getInstalledGames, saveCompatApplied } from "./backend";
+import {
+  getCompatApplied,
+  getConfig,
+  getHdrRuntimeState,
+  getInstalledGames,
+  saveCompatApplied,
+} from "./backend";
 import { Content } from "./Content";
 import { registerDisplayHdrRoutePatch } from "./lib/displayHdrRoutePatch";
+import { registerPerformanceHdrQamPatch } from "./lib/performanceHdrQamPatch";
+import { hasHdrControlCapability } from "./lib/hdrCapability";
+import { autoHdrPreferenceState } from "./lib/autoHdrPreferenceCoordinator";
 import {
   configureCompatPolicy,
   handledGameAppids,
@@ -10,8 +19,10 @@ import {
 } from "./lib/steamCompat";
 
 export default definePlugin(() => {
+  autoHdrPreferenceState.start();
   let unregisterDownloadWatcher = () => {};
   let unregisterDisplayHdrRoutePatch = () => {};
+  let unregisterPerformanceHdrQamPatch = () => {};
   const persistHandledGames = () => {
     saveCompatApplied(handledGameAppids()).catch(() => {});
   };
@@ -26,10 +37,16 @@ export default definePlugin(() => {
       }
       if (cancelled) return;
       try {
-        const config = attempt === 0 ? await configPromise : await getConfig();
+        const [configResult, runtimeResult] = await Promise.allSettled([
+          attempt === 0 ? configPromise : getConfig(),
+          getHdrRuntimeState(),
+        ]);
         if (cancelled) return;
-        if (!config.hdrCapable) continue;
+        const config = configResult.status === "fulfilled" ? configResult.value : undefined;
+        const runtime = runtimeResult.status === "fulfilled" ? runtimeResult.value : undefined;
+        if (!hasHdrControlCapability(config, runtime)) continue;
         unregisterDisplayHdrRoutePatch = registerDisplayHdrRoutePatch();
+        unregisterPerformanceHdrQamPatch = registerPerformanceHdrQamPatch();
         return;
       } catch (error) {
         console.warn("[Armada Control] HDR capability discovery retry", error);
@@ -66,6 +83,8 @@ export default definePlugin(() => {
     content: <Content />,
     onDismount() {
       cancelled = true;
+      autoHdrPreferenceState.stop();
+      unregisterPerformanceHdrQamPatch();
       unregisterDisplayHdrRoutePatch();
       unregisterDownloadWatcher();
     },

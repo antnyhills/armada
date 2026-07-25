@@ -1,4 +1,4 @@
-import { Field, SliderField, ToggleField } from "@decky/ui";
+import { Field, PanelSectionRow, SliderField, ToggleField } from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
 import {
   getHdrEnabled,
@@ -17,9 +17,42 @@ import {
 } from "../lib/hdrBrightness";
 import { shouldShowHdrBrightnessControl } from "../lib/hdrVerification";
 import { hdrRuntimeState } from "../lib/hdrRuntimeState";
+import {
+  shouldKeepAutoHdrControlVisible,
+  shouldShowAutoHdrControl,
+} from "../lib/autoHdrVerification";
+import {
+  autoHdrPreferenceState,
+  resolveAutoHdrPreference,
+} from "../lib/autoHdrPreferenceCoordinator";
+import type {
+  AutoHdrPreference,
+  AutoHdrScope,
+} from "../types";
 
 const BRIGHTNESS_WRITE_THROTTLE_MS = 100;
 const BRIGHTNESS_READBACK_GRACE_MS = 750;
+
+function AutoHdrQamIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="36"
+      height="36"
+      viewBox="0 0 36 36"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="18" cy="18" r="6" />
+      <path d="M18 5v4M18 27v4M5 18h4M27 18h4" />
+      <path d="m8.8 8.8 2.8 2.8m12.8 12.8 2.8 2.8m0-18.4-2.8 2.8M11.6 24.4l-2.8 2.8" />
+      <path d="m27.5 4 .7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3Z" />
+    </svg>
+  );
+}
 
 function useHdrRuntimeSnapshot() {
   const [snapshot, setSnapshot] = useState(hdrRuntimeState.getSnapshot);
@@ -235,6 +268,97 @@ export function HDRToggleControl() {
       )}
     </>
   );
+}
+
+function useAutoHdrPreferenceSnapshot() {
+  const [snapshot, setSnapshot] = useState(autoHdrPreferenceState.getSnapshot);
+  useEffect(() => autoHdrPreferenceState.subscribe(setSnapshot), []);
+  return snapshot;
+}
+
+function useAutoHdrPreference(target: "global" | "active") {
+  const snapshot = useAutoHdrPreferenceSnapshot();
+  const preferences = snapshot.preferences;
+  const preference: AutoHdrPreference | undefined = target === "global"
+    ? preferences?.global
+    : preferences
+      ? resolveAutoHdrPreference(preferences.global, preferences.override)
+      : undefined;
+  const targetScope: AutoHdrScope = target === "global"
+    ? "global"
+    : preferences?.scope ?? "global";
+  const targetAppId = targetScope === "game" ? preferences?.appId ?? null : null;
+  return {
+    error: snapshot.error,
+    initialized: snapshot.initialized,
+    preference,
+    targetAppId,
+    targetScope,
+  };
+}
+
+function AutoHDRToggleControlForScope({ target }: { target: "global" | "active" }) {
+  const runtime = useHdrRuntimeSnapshot().runtime;
+  const preference = useAutoHdrPreference(target);
+  const [changing, setChanging] = useState(false);
+  const [error, setError] = useState("");
+  const visible = target === "active"
+    ? shouldKeepAutoHdrControlVisible(getHdrEnabled(), runtime)
+    : shouldShowAutoHdrControl(getHdrEnabled(), runtime);
+
+  if (!visible) return null;
+
+  const onChange = async (value: boolean) => {
+    setChanging(true);
+    setError("");
+    try {
+      const applied = await autoHdrPreferenceState.updatePreference(
+        preference.targetScope,
+        preference.targetAppId,
+        { enabled: value },
+      );
+      if (applied.error) throw new Error(applied.error);
+    } catch (nextError) {
+      setError(String(nextError));
+    } finally {
+      setChanging(false);
+    }
+  };
+
+  const toggle = (
+    <ToggleField
+      label="AutoHDR"
+      description={changing
+        ? "Applying AutoHDR and verifying Gamescope."
+        : target === "global"
+          ? "Convert SDR games to HDR. You may need to adjust in-game brightness for best results."
+          : undefined}
+      icon={target === "active" ? <AutoHdrQamIcon /> : undefined}
+      checked={preference.preference?.enabled === true}
+      disabled={changing || !preference.initialized || !preference.preference}
+      onChange={onChange}
+    />
+  );
+
+  return (
+    <>
+      {target === "active"
+        ? <PanelSectionRow>{toggle}</PanelSectionRow>
+        : toggle}
+      {error && <Field label="Could not change AutoHDR" description={error} />}
+      {!error && preference.error && (
+        <Field label="AutoHDR state unavailable" description={preference.error} />
+      )}
+    </>
+  );
+}
+
+export function AutoHDRToggleControl() {
+  return <AutoHDRToggleControlForScope target="global" />;
+}
+
+export function AutoHDRQamToggleControl() {
+  return <AutoHDRToggleControlForScope target="active" />;
 }
 
 export function HDRBrightnessControl() {

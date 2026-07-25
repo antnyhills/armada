@@ -12,6 +12,7 @@ function runtime(overrides = {}) {
   return {
     available: true,
     display: ":0",
+    displayIsExternal: false,
     supportsHdr: true,
     enabled: true,
     outputFeedback: true,
