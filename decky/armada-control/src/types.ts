@@ -93,6 +93,18 @@ export interface AutoHdrPreferencesSnapshot {
 
 export interface AutoHdrPreferencePatch {
   enabled?: boolean | null;
+export interface RgbZone {
+  r: number;
+  g: number;
+  b: number;
+  brightness: number;
+}
+
+export interface RgbConfig {
+  enabled: boolean;
+  sync: boolean;
+  left: RgbZone;
+  right: RgbZone;
 }
 
 export interface Config {
@@ -107,6 +119,7 @@ export interface Config {
   sshEnabled: boolean;
   controllerType: string;
   controllerTypes: DropdownChoice[];
+  rgb: RgbConfig;
   calibration?: CalibrationState;
   game?: GameRef | null;
   selectedGame?: GameRef | null;
