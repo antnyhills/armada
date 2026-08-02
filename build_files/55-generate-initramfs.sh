@@ -17,18 +17,21 @@ dracut \
     --kver "${KVER}" \
     --add ostree \
     --add armada-splash \
+    --add armada-ostree-fallback \
     "${IMG}" "${KVER}"
 
 # dracut drops modules silently: fail the build rather than ship without.
-# Exact match: a substring test lets armada-splash-fb pass for the binary.
+# Exact match: a substring test lets armada-splash-launcher pass for the binary.
 contents="$(lsinitrd "${IMG}")"
 for required in \
     usr/lib/systemd/system/armada-splash-initrd.service \
     usr/lib/systemd/system/dracut-pre-mount.service.d/armada-splash.conf \
     usr/libexec/armada/armada-splash \
-    usr/libexec/armada/armada-splash-fb \
+    usr/libexec/armada/armada-splash-launcher \
     usr/libexec/armada/device-env \
     usr/share/armada/splash/splash.asp \
+    usr/libexec/armada/armada-ostree-fallback \
+    usr/lib/systemd/system/ostree-prepare-root.service.d/armada-fallback.conf \
     usr/lib/ostree/ostree-prepare-root; do
     if ! awk -v p="${required}" '$NF == p { found=1 } END { exit !found }' <<<"${contents}"; then
         echo "ERROR: ${required} missing from initramfs"
