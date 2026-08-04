@@ -92,6 +92,7 @@ export interface Config {
   fexProfiles: Record<string, FexProfile>;
   cpuDeviceClass: string;
   osVersion: string;
+  ablVersion: string;
   sshEnabled: boolean;
   controllerType: string;
   controllerTypes: DropdownChoice[];
