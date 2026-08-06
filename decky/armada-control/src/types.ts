@@ -70,6 +70,13 @@ export interface GameRef {
   name: string;
 }
 
+export interface PerfInfo {
+  governors: string[];
+  schedulers: string[];
+  corePresets: DropdownChoice[];
+  cpuCount: number;
+}
+
 export interface RgbZone {
   r: number;
   g: number;
@@ -90,6 +97,7 @@ export interface Config {
   tweaks: Tweaks;
   installedGames: InstalledGame[];
   fexProfiles: Record<string, FexProfile>;
+  perf?: PerfInfo;
   cpuDeviceClass: string;
   osVersion: string;
   ablVersion: string;

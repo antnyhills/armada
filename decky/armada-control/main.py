@@ -11,7 +11,7 @@ from armada_control.config import build_config
 from armada_control.controller import set_controller_type
 from armada_control.power import save_power_config
 from armada_control.steam import installed_games
-from armada_control.system import set_ssh_enabled
+from armada_control.system import reapply_perf, set_ssh_enabled
 from armada_control.tweaks import load_compat_applied, save_compat_applied, save_tweaks
 from armada_control.rgb import get_rgb_config, apply_rgb_config, save_rgb_config
 
@@ -52,6 +52,9 @@ class Plugin:
 
     async def set_ssh_enabled(self, enabled):
         return await asyncio.to_thread(set_ssh_enabled, enabled)
+
+    async def reapply_perf(self):
+        return await asyncio.to_thread(reapply_perf)
 
     async def set_controller_type(self, value):
         return await asyncio.to_thread(set_controller_type, value)
