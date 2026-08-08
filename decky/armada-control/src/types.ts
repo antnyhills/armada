@@ -103,7 +103,9 @@ export interface Config {
   cpuDeviceClass: string;
   osVersion: string;
   ablVersion: string;
+  ablAutoEnabled: boolean;
   sshEnabled: boolean;
+  mtpEnabled: boolean;
   controllerType: string;
   controllerTypes: DropdownChoice[];
   rgb: RgbConfig;
