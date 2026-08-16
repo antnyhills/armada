@@ -4,6 +4,7 @@ import type { CalibrationState, Capture, Config, InstalledGame, PowerConfig, Rgb
 
 export const getConfig = () => call<[], Config>("get_config");
 export const getInstalledGames = () => call<[], InstalledGame[]>("get_installed_games");
+export const getCompatMappedAppids = (tool: string) => call<[string], string[]>("get_compat_mapped_appids", tool);
 export const savePowerConfig = (data: PowerConfig) => call<[PowerConfig], Config>("save_power_config", data);
 export const saveTweaks = (data: Tweaks) => call<[Tweaks], Config>("save_tweaks", data);
 export const saveRgb = (data: RgbConfig) => call<[RgbConfig], Config>("save_rgb", data);
