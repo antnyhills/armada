@@ -90,6 +90,9 @@ powerbutton_write_pid() {
 powerbutton_main() {
     local liddev lid_line pdev line rem read_result state press_ms
 
+    trap 'exit 0' INT TERM
+    trap powerbutton_reexec USR1
+
     pdev="$(wait_for_power_device || true)"
     if [[ -z "$pdev" ]]; then
         log "power-button device not found after ${POWER_DEVICE_WAIT_SEC}s"
@@ -97,8 +100,6 @@ powerbutton_main() {
     fi
 
     trap powerbutton_cleanup EXIT
-    trap 'exit 0' INT TERM
-    trap powerbutton_reexec USR1
     powerbutton_write_pid || return 1
 
     liddev="$(armada_find_lid_dev 2>/dev/null || true)"

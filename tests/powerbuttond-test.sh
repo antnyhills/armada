@@ -108,13 +108,22 @@ while (( attempts > 0 )); do
     attempts=$((attempts - 1))
 done
 ((${#lid_children[@]} > 0))
+lid_parent_pid=$lidpid
 powerbutton_stop_watchers
-if kill -0 "$lidpid" 2>/dev/null; then
+wait_for_pid_exit() {
+    local pid=$1 attempts=100
+    while kill -0 "$pid" 2>/dev/null && (( attempts > 0 )); do
+        sleep 0.01
+        attempts=$((attempts - 1))
+    done
+    ! kill -0 "$pid" 2>/dev/null
+}
+if ! wait_for_pid_exit "$lid_parent_pid"; then
     printf 'lid watcher parent survived cleanup\n' >&2
     exit 1
 fi
 for child_pid in "${lid_children[@]}"; do
-    if kill -0 "$child_pid" 2>/dev/null; then
+    if ! wait_for_pid_exit "$child_pid"; then
         printf 'lid watcher child survived cleanup: %s\n' "$child_pid" >&2
         exit 1
     fi
